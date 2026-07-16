@@ -1,0 +1,1 @@
+status_cache: dict[str, bool] = {}
