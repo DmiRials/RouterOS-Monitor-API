@@ -1,17 +1,23 @@
-from pydantic import BaseModel
-
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 class StatusRequest(BaseModel):
-    token: str
+    model_config = ConfigDict(str_strip_whitespace=True)
 
-    company: str
-    office: str = ""
-    resource: str = ""
-    server: str = ""
-    type: str = ""
+    token: str = Field(min_length=1, max_length=256)
 
-    # Для Netwatch
+    company: str = Field(min_length=1, max_length=128)
+    office: str = Field(default="", max_length=128)
+    resource: str = Field(default="", max_length=128)
+    server: str = Field(default="", max_length=128)
+    type: str = Field(default="", max_length=64)
+
     status: bool | None = None
+    message: str | None = Field(default=None, max_length=3900)
 
-    # Произвольное сообщение
-    message: str | None = None
+    @field_validator("message")
+    @classmethod
+    def normalize_message(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        return value or None

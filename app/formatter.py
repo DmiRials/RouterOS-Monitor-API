@@ -1,47 +1,38 @@
+from html import escape
+
+from app.config import settings
 from app.models import StatusRequest
 
+def _trim(text: str) -> str:
+    return text[:settings.MESSAGE_MAX_LENGTH]
 
 def format_message(data: StatusRequest) -> str:
-    """
-    Формирование сообщения для Telegram.
-    """
-
-    #
-    # Если передано готовое сообщение
-    #
     if data.message:
-
-        title = data.company
-
+        title = escape(data.company)
         if data.office:
-            title += f" | {data.office}"
-
-        return (
+            title += f" | {escape(data.office)}"
+        return _trim(
             f"🚨 {title}\n\n"
-            f"{data.message}"
+            f"{escape(data.message)}"
         )
 
-    #
-    # Для Netwatch status обязателен
-    #
     if data.status is None:
         return "⚠️ Получено событие без status и message."
 
     icon = "✅" if data.status else "❌"
     status = "доступен" if data.status else "недоступен"
-
-    parts = [data.company]
+    parts = [escape(data.company)]
 
     if data.office:
-        parts.append(data.office)
+        parts.append(escape(data.office))
 
     if data.resource:
-        parts.append(data.resource)
+        parts.append(escape(data.resource))
 
     if data.server:
-        parts.append(data.server)
+        parts.append(escape(data.server))
 
     if data.type:
-        parts.append(data.type)
+        parts.append(escape(data.type))
 
-    return f"{icon} {' | '.join(parts)} | {status}"
+    return _trim(f"{icon} {' | '.join(parts)} | {status}")

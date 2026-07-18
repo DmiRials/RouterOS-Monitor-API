@@ -2,28 +2,22 @@ import httpx
 
 from app.config import settings
 
-
 class Telegram:
 
     def __init__(self):
-
         self.url = (
             f"https://api.telegram.org/bot"
             f"{settings.BOT_TOKEN}/sendMessage"
         )
-
         self.client = self._create_client()
 
     def _create_client(self) -> httpx.AsyncClient:
-
         kwargs = {
             "timeout": settings.TELEGRAM_TIMEOUT
         }
 
         if settings.TELEGRAM_PROXY_ENABLED:
-
             if settings.TELEGRAM_PROXY_USER:
-
                 proxy = (
                     f"{settings.TELEGRAM_PROXY_TYPE}://"
                     f"{settings.TELEGRAM_PROXY_USER}:"
@@ -33,7 +27,6 @@ class Telegram:
                 )
 
             else:
-
                 proxy = (
                     f"{settings.TELEGRAM_PROXY_TYPE}://"
                     f"{settings.TELEGRAM_PROXY_HOST}:"
@@ -45,7 +38,6 @@ class Telegram:
         return httpx.AsyncClient(**kwargs)
 
     async def send(self, text: str):
-
         payload = {
             "chat_id": settings.CHAT_ID,
             "text": text,
@@ -59,8 +51,6 @@ class Telegram:
         )
 
     async def close(self):
-
         await self.client.aclose()
-
 
 telegram = Telegram()

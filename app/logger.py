@@ -17,15 +17,13 @@ if not logger.handlers:
         "%(asctime)s | %(levelname)-8s | %(message)s"
     )
 
-    #
     # Консоль
-    #
+
     console = logging.StreamHandler()
     console.setFormatter(formatter)
 
-    #
     # Файл
-    #
+    
     file = RotatingFileHandler(
         LOG_DIR / "api.log",
         maxBytes=10 * 1024 * 1024,

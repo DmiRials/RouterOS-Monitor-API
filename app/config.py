@@ -1,6 +1,5 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-
 class Settings(BaseSettings):
     # Telegram
     BOT_TOKEN: str
@@ -17,10 +16,13 @@ class Settings(BaseSettings):
 
     TELEGRAM_TIMEOUT: int = 15
     TELEGRAM_SILENT: bool = False
+    TELEGRAM_MAX_RETRIES: int = 3
 
     # API
     HOST: str = "0.0.0.0"
     PORT: int = 8000
+    QUEUE_MAX_SIZE: int = 1000
+    MESSAGE_MAX_LENGTH: int = 3900
 
     # Файлы
     TOKENS_FILE: str = "tokens.conf"
@@ -34,6 +36,5 @@ class Settings(BaseSettings):
         case_sensitive=True,
         extra="ignore"
     )
-
 
 settings = Settings()
