@@ -66,6 +66,7 @@ Telegram чат
 ## 🛠️ Установка
 
 ```powershell
+cd C:\Users\Dmitriy\Desktop\Development\API\v2
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
@@ -87,6 +88,7 @@ TOKENS_FILE=tokens.conf
 TELEGRAM_TIMEOUT=15
 TELEGRAM_SILENT=false
 TELEGRAM_MAX_RETRIES=3
+TELEGRAM_RETRY_AFTER_MAX=60
 
 QUEUE_MAX_SIZE=1000
 MESSAGE_MAX_LENGTH=3900
@@ -138,6 +140,7 @@ secret-token-1 # main office
 ## ▶️ Запуск
 
 ```powershell
+cd C:\Users\Dmitriy\Desktop\Development\API\v2
 python run.py
 ```
 
@@ -191,7 +194,9 @@ Invoke-RestMethod `
 
 ```json
 {
-  "detail": "Invalid token"
+  "error": "HTTP error",
+  "detail": "Invalid token",
+  "request_id": "A1B2C3D4"
 }
 ```
 
@@ -276,6 +281,18 @@ Invoke-RestMethod `
 | `422` | Некорректный JSON или не передан ни `status`, ни `message` |
 | `503` | Очередь Telegram переполнена |
 
+Ошибки возвращаются в едином формате:
+
+```json
+{
+  "error": "HTTP error",
+  "detail": "Readable error message",
+  "request_id": "A1B2C3D4"
+}
+```
+
+Для ошибок валидации `error` будет `"Validation error"`, а `detail` содержит список проблемных полей.
+
 Важно: успешный ответ API означает, что событие принято API. Фактическая отправка в Telegram происходит асинхронно в worker.
 
 ## 📬 Очередь и Telegram worker
@@ -287,6 +304,8 @@ Invoke-RestMethod `
 - при сетевой ошибке или timeout;
 - при HTTP `429`, учитывая `retry_after`, если он есть в ответе Telegram;
 - при HTTP `5xx`.
+
+`TELEGRAM_RETRY_AFTER_MAX` ограничивает максимальную паузу при Telegram `429`, чтобы один flood wait не заблокировал worker слишком надолго.
 
 При других ошибках Telegram, например `400`, задача не повторяется, потому что это обычно ошибка payload, chat id или bot token.
 
@@ -319,6 +338,7 @@ DONE
 1. Запусти API:
 
 ```powershell
+cd C:\Users\Dmitriy\Desktop\Development\API\v2
 python run.py
 ```
 

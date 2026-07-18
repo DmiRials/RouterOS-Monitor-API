@@ -1,7 +1,12 @@
 from contextlib import asynccontextmanager
 import asyncio
+import uuid
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.auth import TOKENS
 from app.logger import logger
@@ -53,5 +58,67 @@ app = FastAPI(
     redoc_url=None,
     openapi_url=None,
 )
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(
+    request: Request,
+    exc: StarletteHTTPException,
+):
+    request_id = uuid.uuid4().hex[:8].upper()
+    logger.warning(
+        f"[{request_id}] {'HTTP_ERROR':<10} | "
+        f"{request.client.host if request.client else 'unknown'} | "
+        f"{exc.status_code} | {exc.detail}"
+    )
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "error": "HTTP error",
+            "detail": exc.detail,
+            "request_id": request_id
+        },
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(
+    request: Request,
+    exc: RequestValidationError,
+):
+    request_id = uuid.uuid4().hex[:8].upper()
+    logger.warning(
+        f"[{request_id}] {'VALIDATION':<10} | "
+        f"{request.client.host if request.client else 'unknown'} | {exc.errors()}"
+    )
+    return JSONResponse(
+        status_code=422,
+        content={
+            "error": "Validation error",
+            "detail": jsonable_encoder(exc.errors()),
+            "request_id": request_id
+        },
+    )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(
+    request: Request,
+    exc: Exception,
+):
+    request_id = uuid.uuid4().hex[:8].upper()
+    logger.exception(
+        f"[{request_id}] {'UNHANDLED':<10} | "
+        f"{request.client.host if request.client else 'unknown'} | {exc}"
+    )
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": "Internal server error",
+            "detail": "Unexpected server error. Check logs by request_id.",
+            "request_id": request_id
+        },
+    )
+
 
 app.include_router(router)

@@ -2,7 +2,7 @@ import time
 import uuid
 from asyncio import QueueFull
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Response
 
 from app.auth import check_token
 from app.cache import is_same_status, remember_status, status_cache_key
@@ -12,6 +12,21 @@ from app.models import StatusRequest
 from app.queue import TelegramTask, telegram_queue
 
 router = APIRouter()
+
+
+@router.get("/")
+async def root():
+    return {
+        "service": "Router Monitor API",
+        "status": "ok",
+        "endpoint": "/status"
+    }
+
+
+@router.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    return Response(status_code=204)
+
 
 @router.post("/status")
 async def status(request: Request, data: StatusRequest):
@@ -82,7 +97,8 @@ async def status(request: Request, data: StatusRequest):
                 "duplicate": True,
                 "request_id": request_id
             }
-        remember_status(cache_key, data.status)
+    else:
+        cache_key = None
 
     text = format_message(data)
 
@@ -109,6 +125,9 @@ async def status(request: Request, data: StatusRequest):
     logger.info(
         f"[{request_id}] {'QUEUE':<10} | ADDED"
     )
+
+    if cache_key is not None and data.status is not None:
+        remember_status(cache_key, data.status)
 
     elapsed = (time.perf_counter() - started) * 1000
 

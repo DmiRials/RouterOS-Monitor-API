@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     TELEGRAM_TIMEOUT: int = 15
     TELEGRAM_SILENT: bool = False
     TELEGRAM_MAX_RETRIES: int = 3
+    TELEGRAM_RETRY_AFTER_MAX: int = 60
 
     # API
     HOST: str = "0.0.0.0"

@@ -1,6 +1,8 @@
 import asyncio
 import json
 
+import httpx
+
 from app.config import settings
 from app.logger import logger
 from app.queue import TelegramTask, telegram_queue
@@ -42,6 +44,11 @@ async def telegram_worker():
                         "retry_after",
                         5
                     )
+                    try:
+                        retry = int(retry)
+                    except (TypeError, ValueError):
+                        retry = 5
+                    retry = min(max(retry, 1), settings.TELEGRAM_RETRY_AFTER_MAX)
 
                     logger.warning(
                         f"[{task.request_id}] {'TELEGRAM':<10} | FLOOD WAIT {retry}s"
@@ -62,9 +69,30 @@ async def telegram_worker():
                 logger.error(response.text)
                 break
 
+            except httpx.ConnectError as exc:
+                logger.warning(
+                    f"[{task.request_id}] {'TELEGRAM':<10} | CONNECTION ERROR "
+                    f"(attempt {attempt}): {exc}"
+                )
+                await asyncio.sleep(min(2 ** attempt, 30))
+
+            except httpx.TimeoutException as exc:
+                logger.warning(
+                    f"[{task.request_id}] {'TELEGRAM':<10} | TIMEOUT "
+                    f"(attempt {attempt}): {exc}"
+                )
+                await asyncio.sleep(min(2 ** attempt, 30))
+
+            except httpx.HTTPError as exc:
+                logger.warning(
+                    f"[{task.request_id}] {'TELEGRAM':<10} | HTTP CLIENT ERROR "
+                    f"(attempt {attempt}): {exc}"
+                )
+                await asyncio.sleep(min(2 ** attempt, 30))
+
             except Exception:
                 logger.exception(
-                    f"[{task.request_id}] {'WORKER':<10} | ERROR (attempt {attempt})"
+                    f"[{task.request_id}] {'WORKER':<10} | UNEXPECTED ERROR (attempt {attempt})"
                 )
                 await asyncio.sleep(min(2 ** attempt, 30))
 
