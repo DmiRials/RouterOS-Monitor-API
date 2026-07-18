@@ -59,7 +59,6 @@ jobs:
           name: RouterOS-Monitor-API-Linux
           path: |
             dist/RouterOS-Monitor-API
-            dist/RouterOS-Monitor-API.sha256
 
   release:
     needs: build-linux
@@ -84,7 +83,7 @@ jobs:
           generate_release_notes: true
           files: |
             dist/RouterOS-Monitor-API
-            dist/RouterOS-Monitor-API.sha256
+            
           draft: false
           prerelease: false
         env:
