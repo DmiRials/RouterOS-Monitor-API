@@ -2,35 +2,42 @@ name: Build & Release
 
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (e.g. v1.0.0)"
+        required: false
+        default: "v1.0.0"
 
-  push:
-    tags:
-      - "v*"
+      build_windows:
+        description: "Build Windows"
+        type: boolean
+        required: true
+        default: true
+
+      build_linux:
+        description: "Build Linux"
+        type: boolean
+        required: true
+        default: true
+
+      make_release:
+        description: "Create GitHub Release"
+        type: boolean
+        required: true
+        default: false
 
 permissions:
   contents: write
 
 jobs:
-  build:
-    strategy:
-      matrix:
-        include:
-          - os: ubuntu-latest
-            artifact_name: RouterOS-Monitor-API-linux-amd64
-            executable: RouterOS-Monitor-API-linux-amd64
-
-          - os: windows-latest
-            artifact_name: RouterOS-Monitor-API-windows-amd64
-            executable: RouterOS-Monitor-API-windows-amd64.exe
-
-    runs-on: ${{ matrix.os }}
+  build-windows:
+    if: ${{ github.event.inputs.build_windows == 'true' }}
+    runs-on: windows-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
           cache: pip
@@ -41,71 +48,99 @@ jobs:
           python -m pip install --upgrade pip
 
           if [ -f requirements.lock ]; then
-            echo "Using requirements.lock"
             pip install -r requirements.lock
           else
-            echo "Using requirements.txt"
             pip install -r requirements.txt
           fi
 
           pip install pyinstaller
 
-      - name: Build application
+      - name: Build
         shell: bash
         run: |
           pyinstaller run.py \
             --onefile \
             --clean \
-            --name "${{ matrix.executable }}"
+            --name RouterOS-Monitor-API.exe
 
-      - name: Verify build
+      - name: Verify
         shell: bash
         run: |
-          test -f "dist/${{ matrix.executable }}"
+          test -f dist/RouterOS-Monitor-API.exe
 
-      - name: Show build output
-        shell: bash
-        run: |
-          ls -lah dist
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact_name }}
-          path: dist/${{ matrix.executable }}
+          name: windows
+          path: dist/RouterOS-Monitor-API.exe
 
-  release:
-    if: startsWith(github.ref, 'refs/tags/')
-    needs: build
+  build-linux:
+    if: ${{ github.event.inputs.build_linux == 'true' }}
     runs-on: ubuntu-latest
 
     steps:
-      - name: Download Linux artifact
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+
+          if [ -f requirements.lock ]; then
+            pip install -r requirements.lock
+          else
+            pip install -r requirements.txt
+          fi
+
+          pip install pyinstaller
+
+      - name: Build
+        run: |
+          pyinstaller run.py \
+            --onefile \
+            --clean \
+            --name RouterOS-Monitor-API
+
+      - name: Verify
+        run: |
+          test -f dist/RouterOS-Monitor-API
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: dist/RouterOS-Monitor-API
+
+  release:
+    needs:
+      - build-windows
+      - build-linux
+
+    if: |
+      always() &&
+      github.event.inputs.make_release == 'true'
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
-          name: RouterOS-Monitor-API-linux-amd64
           path: dist
+          merge-multiple: true
 
-      - name: Download Windows artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: RouterOS-Monitor-API-windows-amd64
-          path: dist
-
-      - name: Show downloaded files
+      - name: Show files
         run: ls -lah dist
 
-      - name: Create GitHub Release
+      - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
-          name: RouterOS Monitor API ${{ github.ref_name }}
+          tag_name: ${{ github.event.inputs.version }}
+          name: RouterOS Monitor API ${{ github.event.inputs.version }}
           generate_release_notes: true
           overwrite_files: true
-          draft: false
-          prerelease: false
-          files: |
-            dist/RouterOS-Monitor-API-linux-amd64
-            dist/RouterOS-Monitor-API-windows-amd64.exe
+          files: dist/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
