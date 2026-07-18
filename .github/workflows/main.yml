@@ -1,25 +1,27 @@
-name: Build & Release Linux
+name: Build & Release
 
 on:
-  workflow_dispatch:
-    inputs:
-      version:
-        description: "Версия релиза (например v1.0.0)"
-        required: true
-        default: "v1.0.0"
-
-      make_release:
-        description: "Создать GitHub Release"
-        required: true
-        type: boolean
-        default: true
+  push:
+    tags:
+      - "v*"
 
 permissions:
   contents: write
 
 jobs:
-  build-linux:
-    runs-on: ubuntu-latest
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact_name: RouterOS-Monitor-API-linux-amd64
+            executable: RouterOS-Monitor-API-linux-amd64
+
+          - os: windows-latest
+            artifact_name: RouterOS-Monitor-API-windows-amd64
+            executable: RouterOS-Monitor-API-windows-amd64.exe
+
+    runs-on: ${{ matrix.os }}
 
     steps:
       - name: Checkout repository
@@ -29,47 +31,62 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.13"
+          cache: pip
 
       - name: Install dependencies
+        shell: bash
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+
+          if [ -f requirements.lock ]; then
+            echo "Using requirements.lock"
+            pip install -r requirements.lock
+          else
+            echo "Using requirements.txt"
+            pip install -r requirements.txt
+          fi
+
           pip install pyinstaller
 
       - name: Build application
+        shell: bash
         run: |
           pyinstaller run.py \
             --onefile \
             --clean \
-            --name RouterOS-Monitor-API
+            --name "${{ matrix.executable }}"
+
+      - name: Verify build
+        shell: bash
+        run: |
+          test -f "dist/${{ matrix.executable }}"
 
       - name: Show build output
+        shell: bash
         run: |
-          echo "===== DIST ====="
           ls -lah dist
-
-      - name: Generate SHA256
-        run: |
-          cd dist
-          sha256sum RouterOS-Monitor-API > RouterOS-Monitor-API.sha256
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: RouterOS-Monitor-API-Linux
-          path: |
-            dist/RouterOS-Monitor-API
+          name: ${{ matrix.artifact_name }}
+          path: dist/${{ matrix.executable }}
 
   release:
-    needs: build-linux
+    needs: build
     runs-on: ubuntu-latest
-    if: ${{ github.event.inputs.make_release == 'true' }}
 
     steps:
-      - name: Download build artifact
+      - name: Download Linux artifact
         uses: actions/download-artifact@v4
         with:
-          name: RouterOS-Monitor-API-Linux
+          name: RouterOS-Monitor-API-linux-amd64
+          path: dist
+
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: RouterOS-Monitor-API-windows-amd64
           path: dist
 
       - name: Show downloaded files
@@ -78,13 +95,14 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event.inputs.version }}
-          name: RouterOS Monitor API ${{ github.event.inputs.version }}
+          tag_name: ${{ github.ref_name }}
+          name: RouterOS Monitor API ${{ github.ref_name }}
           generate_release_notes: true
-          files: |
-            dist/RouterOS-Monitor-API
-            
+          overwrite_files: true
           draft: false
           prerelease: false
+          files: |
+            dist/RouterOS-Monitor-API-linux-amd64
+            dist/RouterOS-Monitor-API-windows-amd64.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
