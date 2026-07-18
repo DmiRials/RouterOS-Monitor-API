@@ -1,19 +1,24 @@
-name: Build Linux
+name: Build & Release Linux
 
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Версия релиза (например v1.0.0)"
+        required: true
+        default: "v1.0.0"
 
-  push:
-    branches:
-      - main
-    tags:
-      - "v*"
+      make_release:
+        description: "Создать GitHub Release"
+        required: true
+        type: boolean
+        default: true
 
 permissions:
   contents: write
 
 jobs:
-  build:
+  build-linux:
     runs-on: ubuntu-latest
 
     steps:
@@ -42,16 +47,13 @@ jobs:
         run: |
           echo "===== DIST ====="
           ls -lah dist
-          echo ""
-          echo "===== BUILD ====="
-          ls -lah build || true
 
       - name: Generate SHA256
         run: |
           cd dist
           sha256sum RouterOS-Monitor-API > RouterOS-Monitor-API.sha256
 
-      - name: Upload Artifact
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: RouterOS-Monitor-API-Linux
@@ -59,14 +61,31 @@ jobs:
             dist/RouterOS-Monitor-API
             dist/RouterOS-Monitor-API.sha256
 
-      - name: Publish Release
-        if: startsWith(github.ref, 'refs/tags/')
+  release:
+    needs: build-linux
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.make_release == 'true' }}
+
+    steps:
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: RouterOS-Monitor-API-Linux
+          path: dist
+
+      - name: Show downloaded files
+        run: ls -lah dist
+
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ github.event.inputs.version }}
+          name: RouterOS Monitor API ${{ github.event.inputs.version }}
           generate_release_notes: true
-          fail_on_unmatched_files: true
           files: |
             dist/RouterOS-Monitor-API
             dist/RouterOS-Monitor-API.sha256
+          draft: false
+          prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
