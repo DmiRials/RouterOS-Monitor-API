@@ -26,123 +26,182 @@ on:
         required: true
         default: false
 
+  push:
+    tags:
+      - "v*"
+
 permissions:
   contents: write
 
+env:
+  APP_NAME: RouterOS-Monitor-API
+  ENTRY_POINT: main.py
+  PYTHON_VERSION: "3.13"
+
+concurrency:
+  group: build-release-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  build-windows:
-    if: ${{ github.event.inputs.build_windows == 'true' }}
-    runs-on: windows-latest
-
-    steps:
-      - uses: actions/checkout@v5
-
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.13"
-          cache: pip
-
-      - name: Install dependencies
-        shell: bash
-        run: |
-          python -m pip install --upgrade pip
-
-          if [ -f requirements.lock ]; then
-            pip install -r requirements.lock
-          else
-            pip install -r requirements.txt
-          fi
-
-          pip install pyinstaller
-
-      - name: Build
-        shell: bash
-        run: |
-          pyinstaller run.py \
-            --onefile \
-            --clean \
-            --name RouterOS-Monitor-API.exe
-
-      - name: Verify
-        shell: bash
-        run: |
-          test -f dist/RouterOS-Monitor-API.exe
-
-      - uses: actions/upload-artifact@v5
-        with:
-          name: windows
-          path: dist/RouterOS-Monitor-API.exe
-          if-no-files-found: error
 
   build-linux:
-    if: ${{ github.event.inputs.build_linux == 'true' }}
+    name: Build Linux
+    if: github.event_name == 'push' || github.event.inputs.build_linux == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v5
 
       - uses: actions/setup-python@v6
         with:
-          python-version: "3.13"
+          python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
 
-      - name: Install dependencies
+      - name: Show Python Environment
+        run: |
+          python --version
+          pip --version
+
+      - name: Show Project Structure
+        run: ls -lah
+
+      - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
 
           if [ -f requirements.lock ]; then
             pip install -r requirements.lock
-          else
+          elif [ -f requirements.txt ]; then
             pip install -r requirements.txt
+          else
+            echo "requirements file not found."
+            exit 1
           fi
 
-          pip install pyinstaller
+          if ! python -m pip show pyinstaller >/dev/null 2>&1; then
+            pip install pyinstaller
+          fi
 
-      - name: Build
+      - name: Show PyInstaller Version
+        run: pyinstaller --version
+
+      - name: Build Application
         run: |
-          pyinstaller run.py \
+          pyinstaller "${{ env.ENTRY_POINT }}" \
             --onefile \
             --clean \
-            --name RouterOS-Monitor-API
+            --name "${{ env.APP_NAME }}"
 
-      - name: Verify
-        run: |
-          test -f dist/RouterOS-Monitor-API
+      - name: Verify Build
+        run: test -s "dist/${{ env.APP_NAME }}"
+
+      - name: Show dist Folder
+        run: ls -lah dist
 
       - uses: actions/upload-artifact@v5
         with:
           name: linux
-          path: dist/RouterOS-Monitor-API
+          path: dist/${{ env.APP_NAME }}
+          if-no-files-found: error
+
+  build-windows:
+    name: Build Windows
+    if: github.event_name == 'push' || github.event.inputs.build_windows == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Show Python Environment
+        shell: bash
+        run: |
+          python --version
+          pip --version
+
+      - name: Show Project Structure
+        shell: bash
+        run: ls -lah
+
+      - name: Install Dependencies
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+
+          if [ -f requirements.lock ]; then
+            pip install -r requirements.lock
+          elif [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          else
+            echo "requirements file not found."
+            exit 1
+          fi
+
+          if ! python -m pip show pyinstaller >/dev/null 2>&1; then
+            pip install pyinstaller
+          fi
+
+      - name: Show PyInstaller Version
+        shell: bash
+        run: pyinstaller --version
+
+      - name: Build Application
+        shell: bash
+        run: |
+          pyinstaller "${{ env.ENTRY_POINT }}" \
+            --onefile \
+            --clean \
+            --name "${{ env.APP_NAME }}"
+
+      - name: Verify Build
+        shell: bash
+        run: test -s "dist/${{ env.APP_NAME }}.exe"
+
+      - name: Show dist Folder
+        shell: bash
+        run: ls -lah dist
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: windows
+          path: dist/${{ env.APP_NAME }}.exe
           if-no-files-found: error
 
   release:
-    needs:
-      - build-windows
-      - build-linux
+    name: Create Release
 
-    if: |
-      always() &&
-      github.event.inputs.make_release == 'true'
+    needs:
+      - build-linux
+      - build-windows
+
+    if: >
+      (github.event_name == 'push' ||
+      github.event.inputs.make_release == 'true') &&
+      !contains(needs.*.result, 'failure')
 
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
-      - name: Download all artifacts
-        uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v5
         with:
-          path: dist
+          path: release
           merge-multiple: true
 
-      - name: Show files
-        run: ls -lah dist
+      - name: Show Release Files
+        run: ls -lah release
 
-      - name: Create Release
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event.inputs.version }}
-          name: RouterOS Monitor API ${{ github.event.inputs.version }}
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || github.event.inputs.version }}
+          name: ${{ env.APP_NAME }} ${{ github.ref_type == 'tag' && github.ref_name || github.event.inputs.version }}
           generate_release_notes: true
           overwrite_files: true
-          files: dist/*
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          files: release/*
