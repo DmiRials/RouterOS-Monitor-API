@@ -34,7 +34,7 @@ permissions:
   contents: write
 
 env:
-  APP_NAME: RouterOS-Monitor-API
+  APP_NAME: RouterOS Monitor API
   ENTRY_POINT: run.py
   PYTHON_VERSION: "3.13"
 
