@@ -35,7 +35,7 @@ permissions:
 
 env:
   APP_NAME: RouterOS-Monitor-API
-  ENTRY_POINT: main.py
+  ENTRY_POINT: run.py
   PYTHON_VERSION: "3.13"
 
 concurrency:
