@@ -66,6 +66,67 @@ Telegram чат
 
 ## 🛠️ Установка
 
+### Linux из GitHub Release
+
+Установщик скачивает последний Linux amd64 release и создает каталог
+`routeros-monitor-api` в текущей директории:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/DmiRials/RouterOS-Monitor-API/main/install.sh | bash
+```
+
+Чтобы выбрать другой каталог:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/DmiRials/RouterOS-Monitor-API/main/install.sh | INSTALL_DIR=/opt/routeros-monitor-api bash
+```
+
+Для установки определенной версии вместо последнего release:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/DmiRials/RouterOS-Monitor-API/main/install.sh | RELEASE_TAG=v1.3.0 bash
+```
+
+После установки будет создана структура:
+
+```text
+routeros-monitor-api/
+├── routeros-monitor-api          # исполняемый Linux-файл
+├── routeros-monitor-api.service  # шаблон systemd unit
+├── run.sh                        # ручной запуск
+├── .env                          # настройки приложения
+├── tokens.conf                   # разрешенные API-токены
+└── logs/                         # журналы приложения
+```
+
+Установщик не перезаписывает существующие `.env` и `tokens.conf`, поэтому его
+можно использовать для обновления бинарного файла. Перед первым запуском
+укажите настоящие `BOT_TOKEN`, `CHAT_ID` и API-токены.
+
+Ручной запуск:
+
+```bash
+./routeros-monitor-api/run.sh
+```
+
+Установка как systemd service:
+
+```bash
+sudo cp ./routeros-monitor-api/routeros-monitor-api.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now routeros-monitor-api
+sudo systemctl status routeros-monitor-api
+```
+
+Release формирует файлы без пробелов в именах:
+
+```text
+routeros-monitor-api-linux-amd64
+routeros-monitor-api-windows-amd64.exe
+```
+
+### Установка из исходного кода
+
 ```powershell
 cd C:\Users\Dmitriy\Desktop\Development\API\v2
 python -m venv .venv

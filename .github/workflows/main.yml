@@ -35,6 +35,8 @@ permissions:
 
 env:
   APP_NAME: RouterOS Monitor API
+  LINUX_BINARY: routeros-monitor-api-linux-amd64
+  WINDOWS_BINARY: routeros-monitor-api-windows-amd64.exe
   ENTRY_POINT: run.py
   PYTHON_VERSION: "3.13"
 
@@ -91,18 +93,18 @@ jobs:
           pyinstaller "${{ env.ENTRY_POINT }}" \
             --onefile \
             --clean \
-            --name "${{ env.APP_NAME }}"
+            --name "${{ env.LINUX_BINARY }}"
 
       - name: Verify Build
-        run: test -s "dist/${{ env.APP_NAME }}"
+        run: test -s "dist/${{ env.LINUX_BINARY }}"
 
       - name: Show dist Folder
         run: ls -lah dist
 
       - uses: actions/upload-artifact@v5
         with:
-          name: linux
-          path: dist/${{ env.APP_NAME }}
+          name: linux-amd64
+          path: dist/${{ env.LINUX_BINARY }}
           if-no-files-found: error
 
   build-windows:
@@ -157,11 +159,11 @@ jobs:
           pyinstaller "${{ env.ENTRY_POINT }}" \
             --onefile \
             --clean \
-            --name "${{ env.APP_NAME }}"
+            --name "${{ env.WINDOWS_BINARY }}"
 
       - name: Verify Build
         shell: bash
-        run: test -s "dist/${{ env.APP_NAME }}.exe"
+        run: test -s "dist/${{ env.WINDOWS_BINARY }}"
 
       - name: Show dist Folder
         shell: bash
@@ -169,8 +171,8 @@ jobs:
 
       - uses: actions/upload-artifact@v5
         with:
-          name: windows
-          path: dist/${{ env.APP_NAME }}.exe
+          name: windows-amd64
+          path: dist/${{ env.WINDOWS_BINARY }}
           if-no-files-found: error
 
   release:
