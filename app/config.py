@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     HOST: str = "0.0.0.0"
     PORT: int = 8000
     QUEUE_MAX_SIZE: int = 1000
+    STATUS_CACHE_MAX_SIZE: int = 10_000
     MESSAGE_MAX_LENGTH: int = 3900
 
     # Файлы

@@ -1,4 +1,5 @@
 import httpx
+from urllib.parse import quote
 
 from app.config import settings
 
@@ -18,10 +19,12 @@ class Telegram:
 
         if settings.TELEGRAM_PROXY_ENABLED:
             if settings.TELEGRAM_PROXY_USER:
+                user = quote(settings.TELEGRAM_PROXY_USER, safe="")
+                password = quote(settings.TELEGRAM_PROXY_PASSWORD, safe="")
                 proxy = (
                     f"{settings.TELEGRAM_PROXY_TYPE}://"
-                    f"{settings.TELEGRAM_PROXY_USER}:"
-                    f"{settings.TELEGRAM_PROXY_PASSWORD}@"
+                    f"{user}:"
+                    f"{password}@"
                     f"{settings.TELEGRAM_PROXY_HOST}:"
                     f"{settings.TELEGRAM_PROXY_PORT}"
                 )
@@ -52,5 +55,3 @@ class Telegram:
 
     async def close(self):
         await self.client.aclose()
-
-telegram = Telegram()

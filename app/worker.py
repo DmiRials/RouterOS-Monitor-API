@@ -5,101 +5,94 @@ import httpx
 
 from app.config import settings
 from app.logger import logger
-from app.queue import TelegramTask, telegram_queue
-from app.telegram import telegram
+from app.queue import EventQueue, TelegramTask
+from app.telegram import Telegram
 
-async def telegram_worker():
+
+async def telegram_worker(
+    queue: EventQueue,
+    telegram: Telegram,
+    stop_event: asyncio.Event,
+) -> None:
     logger.info("WORKER     | Telegram Worker запущен")
-    while True:
-        task: TelegramTask = await telegram_queue.get()
-        logger.info(
-            f"[{task.request_id}] {'WORKER':<10} | PROCESS"
-        )
+    while not stop_event.is_set():
+        try:
+            task: TelegramTask = await asyncio.wait_for(queue.get(), timeout=0.5)
+        except asyncio.TimeoutError:
+            continue
 
-        sent = False
-        for attempt in range(1, settings.TELEGRAM_MAX_RETRIES + 1):
-            try:
-                response = await telegram.send(task.text)
-                logger.info(
-                    f"[{task.request_id}] {'TELEGRAM':<10} | HTTP {response.status_code} (attempt {attempt})"
-                )
+        try:
+            await _send_with_retries(task, telegram)
+        finally:
+            queue.task_done()
 
-                if response.status_code == 200:
-                    logger.info(
-                        f"[{task.request_id}] {'TELEGRAM':<10} | OK"
-                    )
+
+async def _send_with_retries(task: TelegramTask, telegram: Telegram) -> None:
+    sent = False
+    max_retries = max(settings.TELEGRAM_MAX_RETRIES, 1)
+
+    for attempt in range(1, max_retries + 1):
+        delay = 0
+        try:
+            response = await telegram.send(task.text)
+            logger.info(
+                f"[{task.request_id}] {'TELEGRAM':<10} | "
+                f"HTTP {response.status_code} (attempt {attempt})"
+            )
+
+            if response.status_code == 200:
+                try:
+                    response_data = response.json()
+                except json.JSONDecodeError:
+                    response_data = {}
+                if response_data.get("ok") is True:
+                    logger.info(f"[{task.request_id}] {'TELEGRAM':<10} | OK")
                     sent = True
                     break
 
-                if response.status_code == 429:
-                    try:
-                        data = response.json()
-                    except json.JSONDecodeError:
-                        data = {}
-
-                    retry = data.get(
-                        "parameters",
-                        {}
-                    ).get(
-                        "retry_after",
-                        5
-                    )
-                    try:
-                        retry = int(retry)
-                    except (TypeError, ValueError):
-                        retry = 5
-                    retry = min(max(retry, 1), settings.TELEGRAM_RETRY_AFTER_MAX)
-
-                    logger.warning(
-                        f"[{task.request_id}] {'TELEGRAM':<10} | FLOOD WAIT {retry}s"
-                    )
-                    await asyncio.sleep(retry)
-                    continue
-
-                if 500 <= response.status_code < 600:
-                    logger.warning(
-                        f"[{task.request_id}] {'TELEGRAM':<10} | RETRY HTTP {response.status_code}"
-                    )
-                    await asyncio.sleep(min(2 ** attempt, 30))
-                    continue
-
+            if response.status_code == 429:
+                try:
+                    response_data = response.json()
+                except json.JSONDecodeError:
+                    response_data = {}
+                retry_after = response_data.get("parameters", {}).get("retry_after", 5)
+                try:
+                    retry_after = int(retry_after)
+                except (TypeError, ValueError):
+                    retry_after = 5
+                delay = min(max(retry_after, 1), settings.TELEGRAM_RETRY_AFTER_MAX)
+                logger.warning(
+                    f"[{task.request_id}] {'TELEGRAM':<10} | FLOOD WAIT {delay}s"
+                )
+            elif 500 <= response.status_code < 600:
+                delay = min(2 ** attempt, 30)
+                logger.warning(
+                    f"[{task.request_id}] {'TELEGRAM':<10} | "
+                    f"RETRY HTTP {response.status_code}"
+                )
+            else:
                 logger.error(
-                    f"[{task.request_id}] {'TELEGRAM':<10} | HTTP {response.status_code}"
+                    f"[{task.request_id}] {'TELEGRAM':<10} | "
+                    f"HTTP {response.status_code}"
                 )
-                logger.error(response.text)
                 break
-
-            except httpx.ConnectError as exc:
-                logger.warning(
-                    f"[{task.request_id}] {'TELEGRAM':<10} | CONNECTION ERROR "
-                    f"(attempt {attempt}): {exc}"
-                )
-                await asyncio.sleep(min(2 ** attempt, 30))
-
-            except httpx.TimeoutException as exc:
-                logger.warning(
-                    f"[{task.request_id}] {'TELEGRAM':<10} | TIMEOUT "
-                    f"(attempt {attempt}): {exc}"
-                )
-                await asyncio.sleep(min(2 ** attempt, 30))
-
-            except httpx.HTTPError as exc:
-                logger.warning(
-                    f"[{task.request_id}] {'TELEGRAM':<10} | HTTP CLIENT ERROR "
-                    f"(attempt {attempt}): {exc}"
-                )
-                await asyncio.sleep(min(2 ** attempt, 30))
-
-            except Exception:
-                logger.exception(
-                    f"[{task.request_id}] {'WORKER':<10} | UNEXPECTED ERROR (attempt {attempt})"
-                )
-                await asyncio.sleep(min(2 ** attempt, 30))
-
-        if not sent:
-            logger.error(
-                f"[{task.request_id}] {'TELEGRAM':<10} | FAILED AFTER {settings.TELEGRAM_MAX_RETRIES} ATTEMPTS"
+        except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPError) as exc:
+            delay = min(2 ** attempt, 30)
+            logger.warning(
+                f"[{task.request_id}] {'TELEGRAM':<10} | "
+                f"HTTP CLIENT ERROR (attempt {attempt}): {exc}"
             )
+        except Exception:
+            logger.exception(
+                f"[{task.request_id}] {'WORKER':<10} | UNEXPECTED ERROR"
+            )
+            break
 
-        telegram_queue.task_done()
-        await asyncio.sleep(0.1)
+        if attempt < max_retries and delay:
+            await asyncio.sleep(delay)
+
+    if not sent:
+        logger.error(
+            f"[{task.request_id}] {'TELEGRAM':<10} | "
+            f"FAILED AFTER {max_retries} ATTEMPTS"
+        )

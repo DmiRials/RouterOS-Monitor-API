@@ -56,6 +56,7 @@ Telegram чат
 │   ├── models.py      # Pydantic-модели входных данных
 │   ├── queue.py       # очередь Telegram-задач
 │   ├── routes.py      # HTTP endpoints
+│   ├── services.py    # сценарий приема и постановки событий в очередь
 │   └── worker.py      # Telegram worker
 ├── logs/
 ├── requirements.txt
@@ -91,6 +92,7 @@ TELEGRAM_MAX_RETRIES=3
 TELEGRAM_RETRY_AFTER_MAX=60
 
 QUEUE_MAX_SIZE=1000
+STATUS_CACHE_MAX_SIZE=10000
 MESSAGE_MAX_LENGTH=3900
 
 LOG_DIR=logs
@@ -152,7 +154,19 @@ http://127.0.0.1:8000/status
 
 Если `HOST=0.0.0.0`, сервис слушает все сетевые интерфейсы.
 
+Сервис использует очередь и кэш в памяти процесса, поэтому его следует запускать
+с одним Uvicorn worker. Для гарантированной доставки после перезапуска нужна
+внешняя очередь или постоянное хранилище.
+
 ## 🌐 API
+
+### Проверки состояния
+
+- `GET /health/live` - процесс приложения работает.
+- `GET /health/ready` - приложение и очередь инициализированы; ответ также содержит `queue_size`.
+
+Все HTTP-ответы содержат заголовок `X-Request-ID`. Тот же идентификатор
+используется в JSON-ответах об ошибках и в логах.
 
 ### 📮 `POST /status`
 

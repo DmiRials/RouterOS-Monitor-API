@@ -1,7 +1,7 @@
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 class StatusRequest(BaseModel):
-    model_config = ConfigDict(str_strip_whitespace=True)
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
 
     token: str = Field(min_length=1, max_length=256)
 
@@ -21,3 +21,9 @@ class StatusRequest(BaseModel):
             return None
         value = value.strip()
         return value or None
+
+    @model_validator(mode="after")
+    def require_content(self):
+        if self.status is None and not self.message:
+            raise ValueError("status or message is required")
+        return self

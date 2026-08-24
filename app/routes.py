@@ -1,15 +1,11 @@
 import time
-import uuid
 from asyncio import QueueFull
 
 from fastapi import APIRouter, HTTPException, Request, Response
 
-from app.auth import check_token
-from app.cache import is_same_status, remember_status, status_cache_key
-from app.formatter import format_message
 from app.logger import logger
 from app.models import StatusRequest
-from app.queue import TelegramTask, telegram_queue
+from app.services import EventService
 
 router = APIRouter()
 
@@ -28,13 +24,27 @@ async def favicon():
     return Response(status_code=204)
 
 
+@router.get("/health/live")
+async def health_live():
+    return {"status": "ok"}
+
+
+@router.get("/health/ready")
+async def health_ready(request: Request):
+    queue = request.app.state.queue
+    return {"status": "ready", "queue_size": queue.qsize()}
+
+
 @router.post("/status")
 async def status(request: Request, data: StatusRequest):
-    request_id = uuid.uuid4().hex[:8].upper()
+    request_id = request.state.request_id
     started = time.perf_counter()
     client_host = request.client.host if request.client else "unknown"
+    service: EventService = request.app.state.event_service
 
-    if not check_token(data.token):
+    try:
+        result = service.accept(data, request_id)
+    except PermissionError:
         logger.warning(
             f"[{request_id}] {'AUTH':<10} | FAILED | "
             f"{client_host}"
@@ -43,75 +53,6 @@ async def status(request: Request, data: StatusRequest):
         raise HTTPException(
             status_code=401,
             detail="Invalid token"
-        )
-
-    parts = [
-        data.company,
-        data.office,
-        data.type,
-        data.resource,
-    ]
-    parts = [x for x in parts if x]
-
-    if data.message:
-        event = "MESSAGE"
-    elif data.status is True:
-        event = "UP"
-    elif data.status is False:
-        event = "DOWN"
-    else:
-        event = "CUSTOM"
-
-    logger.info(
-        f"[{request_id}] {'REQUEST':<10} | "
-        f"{client_host} | "
-        f"{' | '.join(parts)} | "
-        f"{event}"
-    )
-
-    logger.info(
-        f"[{request_id}] {'AUTH':<10} | OK"
-    )
-
-    if data.status is None and not data.message:
-        raise HTTPException(
-            status_code=422,
-            detail="status or message is required"
-        )
-
-    if data.status is not None and not data.message:
-        cache_key = status_cache_key(
-            data.company,
-            data.office,
-            data.resource,
-            data.server,
-            data.type,
-        )
-        if is_same_status(cache_key, data.status):
-            logger.info(
-                f"[{request_id}] {'CACHE':<10} | SKIPPED DUPLICATE STATUS"
-            )
-            return {
-                "accepted": True,
-                "queued": False,
-                "duplicate": True,
-                "request_id": request_id
-            }
-    else:
-        cache_key = None
-
-    text = format_message(data)
-
-    logger.info(
-        f"[{request_id}] {'MESSAGE':<10} | {text}"
-    )
-
-    try:
-        telegram_queue.put_nowait(
-            TelegramTask(
-                request_id=request_id,
-                text=text
-            )
         )
     except QueueFull:
         logger.error(
@@ -123,11 +64,19 @@ async def status(request: Request, data: StatusRequest):
         )
 
     logger.info(
-        f"[{request_id}] {'QUEUE':<10} | ADDED"
+        f"[{request_id}] {'REQUEST':<10} | "
+        f"{client_host} | "
+        f"{data.company} | {data.office} | {data.type} | {data.resource}"
     )
 
-    if cache_key is not None and data.status is not None:
-        remember_status(cache_key, data.status)
+    logger.info(
+        f"[{request_id}] {'AUTH':<10} | OK"
+    )
+
+    if result.duplicate:
+        logger.info(f"[{request_id}] {'CACHE':<10} | SKIPPED DUPLICATE STATUS")
+    else:
+        logger.info(f"[{request_id}] {'QUEUE':<10} | ADDED")
 
     elapsed = (time.perf_counter() - started) * 1000
 
@@ -137,6 +86,7 @@ async def status(request: Request, data: StatusRequest):
 
     return {
         "accepted": True,
-        "queued": True,
+        "queued": result.queued,
+        **({"duplicate": True} if result.duplicate else {}),
         "request_id": request_id
     }
